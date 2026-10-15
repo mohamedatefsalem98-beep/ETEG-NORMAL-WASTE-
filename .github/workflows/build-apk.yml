@@ -36,63 +36,17 @@ jobs:
           fi
           cp "$HTML_FILE" www/index.html
 
-          # 2. حقن إعدادات منع السكرول الجانبي (Viewport Fix) وتعديل ملف CSS ليتناسب مع كافة الشاشات
-          python3 -c '
-          with open("www/index.html", "r", encoding="utf-8") as f:
-              html = f.read()
-
-          # التأكد من وجود وسم الـ viewport الصحيح الذي يمنع التمدد الخارجي
-          if "name=\"viewport\"" in html:
-              html = html.replace("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">", "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover\">")
-          else:
-              html = html.replace("<head>", "<head>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover\">")
-
-          # حقن قواعد CSS إضافية لمنع أي تجاوز أفقي (Overflow-x hidden) وتثبيت المحاذاة
-          responsive_css = """
-          <style>
-            html, body {
-              max-width: 100vw !important;
-              overflow-x: hidden !important;
-              box-sizing: border-box !important;
-              -webkit-text-size-adjust: 100%;
-            }
-            * {
-              max-width: 100%;
-              box-sizing: border-box;
-            }
-            main {
-              width: 100% !important;
-              max-width: 1200px !important;
-              margin: 0 auto !important;
-              padding: 10px !important;
-            }
-            .card {
-              width: 100% !important;
-              max-width: 100% !important;
-              overflow-x: hidden !important;
-            }
-            .tw {
-              width: 100% !important;
-              overflow-x: auto !important; /* الجدول وحده يتحرك أفقياً داخلياً لسهولة القراءة دون إخراج الشاشة */
-            }
-          </style>
-          """
-          html = html.replace("</head>", responsive_css + "\n</head>")
-
-          with open("www/index.html", "w", encoding="utf-8") as f:
-              f.write(html)
-          '
-
-          # 3. تجهيز صورة اللوجو للشاشة الافتتاحية
+          # 2. تجهيز صورة اللوجو للشاشة الافتتاحية (من الصورة المرفوعة أو من داخل ملف الـ HTML)
           LOGO_FILE=$(find . -maxdepth 2 -iname "*logo*.png" -o -iname "*logo*.jpg" | head -n 1)
           if [ -n "$LOGO_FILE" ]; then
             B64_LOGO=$(base64 -w 0 "$LOGO_FILE")
             LOGO_SRC="data:image/png;base64,$B64_LOGO"
           else
+            # استخدام لوجو ETEG.Co العريض الموجود في الهيدر داخل ملف الـ HTML
             LOGO_SRC=$(grep -o 'data:image/png;base64,[^"]*' www/index.html | tail -n 1)
           fi
 
-          # 4. بناء الشاشة الافتتاحية (Splash Screen) متناسبة مع الشاشات
+          # 3. حقن كود الشاشة الافتتاحية (Splash Screen) داخل التطبيق
           cat << EOF > splash_inject.html
           <style>
           #eteg-splash {
@@ -104,10 +58,7 @@ jobs:
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 20px;
-            width: 100vw;
-            height: 100vh;
-            overflow: hidden;
+            padding: 24px;
             transition: opacity 0.6s ease, visibility 0.6s ease;
           }
           #eteg-splash.hide {
@@ -116,19 +67,19 @@ jobs:
             pointer-events: none;
           }
           #eteg-splash img {
-            width: 85%;
-            max-width: 320px;
+            width: 82%;
+            max-width: 340px;
             height: auto;
             object-fit: contain;
             animation: splashZoom 0.9s ease-out;
           }
           #eteg-splash .powered {
-            margin-top: 24px;
+            margin-top: 28px;
             font-family: 'Cairo', 'Segoe UI', Arial, sans-serif;
-            font-size: 15px;
+            font-size: 16px;
             font-weight: 700;
             color: #0b6e8a;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.6px;
             direction: ltr;
             text-align: center;
             animation: splashFade 1.2s ease-out;
@@ -159,6 +110,7 @@ jobs:
           </script>
           EOF
 
+          # دمج الشاشة الافتتاحية في بداية جسم الصفحة <body>
           python3 -c '
           with open("www/index.html", "r", encoding="utf-8") as f:
               html = f.read()
@@ -169,15 +121,15 @@ jobs:
               f.write(html)
           '
 
-          # 5. تضمين مكتبة الإكسيل داخل التطبيق
+          # 4. تضمين مكتبة الإكسيل داخل التطبيق ليعمل بدون إنترنت
           curl -sL https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js -o www/xlsx.full.min.js
           sed -i 's|https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js|xlsx.full.min.js|g' www/index.html
 
-          # 6. تحديث الاسم والإعدادات في Capacitor
+          # 5. ضبط اسم التطبيق ليصبح ETEG Normal Waste Calculator
           cat << 'EOF' > package.json
           {
             "name": "eteg-normal-waste-calculator",
-            "version": "1.2.0",
+            "version": "1.1.0",
             "private": true
           }
           EOF
@@ -190,12 +142,12 @@ jobs:
           }
           EOF
 
-          # 7. تثبيت الحزم وبناء المشروع
+          # 6. تثبيت Capacitor وإضافة منصة الأندرويد
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
           npx cap add android
           npx cap sync android
 
-          # 8. ضبط الأيقونات وخلفية البدء
+          # 7. تحديث أيقونة التطبيق على شاشة الهاتف وشاشة التحميل الأصلية للأندرويد
           if [ -n "$LOGO_FILE" ]; then
             cp "$LOGO_FILE" icon.png
           else
@@ -207,9 +159,10 @@ jobs:
             done
           fi
 
+          # تغيير خلفية بدء الأندرويد للأبيض لتندمج بسلاسة مع الشاشة الافتتاحية
           sed -i 's/#[0-9a-fA-F]\{6\}/#FFFFFF/g' android/app/src/main/res/values/ic_launcher_background.xml || true
 
-          # 9. تجميع ملف الـ APK
+          # 8. تجميع وبناء ملف الـ APK
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
