@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
@@ -24,33 +24,47 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Build Android Project
         run: |
           mkdir -p www
 
-          # العثور التلقائي على أي ملف HTML في المستودع مهما كان اسمه ونسخه كـ index.html
-          HTML_FILE=$(find . -maxdepth 1 -name "*.html" | head -n 1)
+          # 1. البحث عن ملف الـ HTML في أي مكان داخل المستودع
+          HTML_FILE=$(find . -maxdepth 2 -iname "*.html" | head -n 1)
           if [ -z "$HTML_FILE" ]; then
-            echo "خطأ: لم يتم العثور على أي ملف HTML في المستودع! يرجى رفع الملف أولاً."
+            echo "ERROR: لم يتم العثور على ملف HTML في المستودع! تأكد من رفع الملف بجوار مجلد .github"
+            ls -la
             exit 1
           fi
+          echo "Found HTML file: $HTML_FILE"
           cp "$HTML_FILE" www/index.html
 
-          # تحميل مكتبة الإكسيل داخل التطبيق ليعمل بدون إنترنت
+          # 2. تضمين مكتبة الإكسيل داخل التطبيق ليعمل بدون إنترنت
           curl -sL https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js -o www/xlsx.full.min.js
           sed -i 's|https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js|xlsx.full.min.js|g' www/index.html
 
-          # تهيئة المشروع وتثبيت Capacitor (إصدار مستقر متوافق مع Java 21)
-          npm init -y
+          # 3. إنشاء package.json وملف إعدادات Capacitor بصيغة JSON مباشرة لتجنب خطأ TypeScript
+          cat << 'EOF' > package.json
+          {
+            "name": "eteg-waste-calculator",
+            "version": "1.0.0",
+            "private": true
+          }
+          EOF
+
+          cat << 'EOF' > capacitor.config.json
+          {
+            "appId": "com.eteg.wastecalculator",
+            "appName": "ETEG Waste",
+            "webDir": "www"
+          }
+          EOF
+
+          # 4. تثبيت Capacitor وإضافة منصة الأندرويد
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
-
-          npx cap init "ETEG Waste" "com.eteg.wastecalculator" --web-dir www
           npx cap add android
+          npx cap sync android
 
-          # استخراج أيقونة مصنع ETEG بأمان دون كسر ملفات 9-patch
+          # 5. استخراج أيقونة مصنع ETEG من ملف الـ HTML وتطبيقها
           grep -o 'data:image/png;base64,[^"]*' www/index.html | head -n 1 | sed 's/data:image\/png;base64,//' | base64 -d > icon.png || true
           if [ -s icon.png ]; then
             for f in $(find android/app/src/main/res/mipmap-* -name "ic_launcher.png" -o -name "ic_launcher_round.png" -o -name "ic_launcher_foreground.png"); do
@@ -58,8 +72,7 @@ jobs:
             done
           fi
 
-          # بناء ملف الـ APK
-          npx cap sync android
+          # 6. تجميع وبناء ملف الـ APK
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
